@@ -1225,7 +1225,6 @@ function setDir(d){
 }
 
 function clrF(id){document.getElementById(id).value='';updPv();}
-
 function updPv(){
   var v=document.getElementById('c-verse').value||'';
   var ov=document.getElementById('c-ov').value||'dark';
@@ -1234,4 +1233,254 @@ function updPv(){
   if(po)po.style.background=OVS[ov]||OVS.dark;
   if(pt){
     pt.classList.remove('rtl','deva','ltr');pt.classList.add(verseDir);
-    pt.textContent=v.trim()||(verseDi
+    pt.textContent=v.trim()||(verseDir==='rtl'?'آپ کی شاعری یہاں نظر آئے گی':verseDir==='deva'?'आपकी शायरी यहाँ दिखेगी':'Your verse will appear here...');
+  }
+}
+
+async function submitPost(){
+  var auth=document.getElementById('c-auth').value.trim()||'Anonymous';
+  var verse=document.getElementById('c-verse').value.trim();
+  var trans=document.getElementById('c-trans').value.trim();
+  var cat=document.getElementById('c-cat').value;
+  var ov=document.getElementById('c-ov').value;
+  if(!verse){toast('Please write something first!');return;}
+  var post={id:'local-'+Date.now(),u:verseDir==='rtl'?verse:'',h:verseDir==='deva'?verse:'',e:verseDir==='ltr'?verse:'',trans:trans,author:auth,bg:selBg,cat:cat,ov:ov,likes:0,user:true};
+  var stEl=document.getElementById('submit-status');stEl.textContent='Saving...';
+  var fbId=await saveToFirebase(post);
+  if(fbId){stEl.textContent='✓ Saved to Firebase!';}
+  else{post.fromFB=false;fbPosts.unshift(post);renderFeed();stEl.textContent='✓ Saved locally';}
+  document.getElementById('c-auth').value='';document.getElementById('c-verse').value='';document.getElementById('c-trans').value='';
+  updPv();toast('✦ Your verse has been published!');
+  setTimeout(function(){
+    stEl.textContent='';gTab('feed');fdF='user';
+    document.querySelectorAll('#fd-f .chip').forEach(function(c){c.classList.remove('on');});
+    var uc=document.querySelector('#fd-f .chip[data-f="user"]');if(uc)uc.classList.add('on');
+    renderFeed();
+  },1800);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MUSIC PLAYER
+// ═══════════════════════════════════════════════════════════
+function renderPlaylist(){
+  var pl=document.getElementById('plist');pl.innerHTML='';
+  TRACKS.forEach(function(t,i){
+    var d=document.createElement('div');d.className='pli'+(i===tidx?' on':'');
+    d.innerHTML='<div class="pdot"></div><div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+t.title+'</div>';
+    (function(idx){d.addEventListener('click',function(){tidx=idx;startTrack();});})(i);
+    pl.appendChild(d);
+  });
+}
+
+function startTrack(){
+  if(ytWin&&!ytWin.closed)ytWin.close();ytWin=null;
+  isPlay=true;
+  document.getElementById('playbtn').textContent='⏸';
+  document.getElementById('pnow').textContent=TRACKS[tidx].title;
+  document.getElementById('pst').textContent='▶ Opening popup...';
+  document.querySelectorAll('.pli').forEach(function(el,i){el.classList.toggle('on',i===tidx);});
+  ytWin=window.open(TRACKS[tidx].url,'ShayariYT','width=520,height=360,top=60,left=60,toolbar=no,location=no,menubar=no,scrollbars=no,resizable=yes');
+  if(!ytWin){document.getElementById('pst').textContent='⚠ Allow popups';toast('Allow popups for individual tracks!');}
+  else{document.getElementById('pst').textContent='▶ Playing in popup';}
+  clearInterval(simInt);simP=0;document.getElementById('pf').style.width='0%';
+  simInt=setInterval(function(){
+    if(!isPlay)return;
+    simP+=0.15;if(simP>=100)simP=100;
+    document.getElementById('pf').style.width=simP+'%';
+    if(simP>=100){clearInterval(simInt);setTimeout(function(){if(isPlay)nextT();},1000);}
+  },200);
+}
+
+function togPlay(){
+  if(isPlay){
+    isPlay=false;document.getElementById('playbtn').textContent='▶';document.getElementById('pst').textContent='⏸ Paused';clearInterval(simInt);
+  }else{
+    if(ytWin&&!ytWin.closed){
+      isPlay=true;document.getElementById('playbtn').textContent='⏸';document.getElementById('pst').textContent='▶ Playing in popup';
+      simInt=setInterval(function(){if(!isPlay)return;simP+=0.15;if(simP>=100)simP=100;document.getElementById('pf').style.width=simP+'%';if(simP>=100){clearInterval(simInt);setTimeout(function(){if(isPlay)nextT();},1000);}},200);
+    }else{startTrack();}
+  }
+}
+
+function nextT(){clearInterval(simInt);tidx=shufOn?Math.floor(Math.random()*TRACKS.length):(tidx+1)%TRACKS.length;renderPlaylist();if(isPlay)startTrack();else document.getElementById('pnow').textContent=TRACKS[tidx].title;}
+function prevT(){clearInterval(simInt);tidx=(tidx-1+TRACKS.length)%TRACKS.length;renderPlaylist();if(isPlay)startTrack();else document.getElementById('pnow').textContent=TRACKS[tidx].title;}
+function togShuf(){shufOn=!shufOn;document.getElementById('shufbtn').style.color=shufOn?'var(--gold)':'';toast(shufOn?'🔀 Shuffle ON':'Shuffle OFF');}
+function seekP(e){var r=e.currentTarget.getBoundingClientRect();simP=Math.max(0,Math.min(100,((e.clientX-r.left)/r.width)*100));document.getElementById('pf').style.width=simP+'%';}
+function togMini(){miniP=!miniP;document.getElementById('player').classList.toggle('mini',miniP);document.getElementById('ptog').textContent=miniP?'♪':'—';}
+
+// ═══════════════════════════════════════════════════════════
+//  TTS READ ALOUD
+// ═══════════════════════════════════════════════════════════
+function loadTTSVoices(){
+  if(!('speechSynthesis' in window))return;
+  ttsVoices=window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged=function(){ttsVoices=window.speechSynthesis.getVoices();};
+}
+
+function togTTS(){
+  ttsMini=!ttsMini;
+  document.getElementById('tts-panel').classList.toggle('mini',ttsMini);
+  document.getElementById('tts-tog').textContent=ttsMini?'🗣':'—';
+}
+
+function openTTSPanel(){
+  if(ttsMini){ttsMini=false;document.getElementById('tts-panel').classList.remove('mini');document.getElementById('tts-tog').textContent='—';}
+}
+
+function pickVoice(lang){
+  if(!ttsVoices.length)ttsVoices=window.speechSynthesis.getVoices();
+  var map={ur:['ur','arabic'],hi:['hi-IN','hi'],en:['en-GB','en-US','en']};
+  var prefs=map[lang]||map.en;
+  for(var i=0;i<prefs.length;i++){
+    var v=ttsVoices.filter(function(v){return v.lang.toLowerCase().indexOf(prefs[i].toLowerCase())===0;})[0];
+    if(v)return v;
+  }
+  return ttsVoices[0]||null;
+}
+
+function decodeHtml(str){if(!str)return '';var ta=document.createElement('textarea');ta.innerHTML=str;return ta.value;}
+
+function speakText(text,lang){
+  if(!('speechSynthesis' in window)){toast('Speech not supported.');return;}
+  var clean=decodeHtml(text).replace(/\n/g,' — ');
+  window.speechSynthesis.cancel();
+  var utt=new SpeechSynthesisUtterance(clean);
+  utt.rate=ttsRate;utt.pitch=ttsPitch;
+  utt.lang=lang==='ur'?'ur-PK':lang==='hi'?'hi-IN':'en-GB';
+  var v=pickVoice(lang);if(v)utt.voice=v;
+  utt.onstart=function(){
+    ttsSpeaking=true;
+    var pb=document.getElementById('tts-playbtn');if(pb){pb.textContent='⏸';pb.classList.add('speaking');}
+    var w=document.getElementById('tts-wave');if(w)w.classList.add('active');
+    var st=document.getElementById('tts-status');if(st)st.textContent='▶ Speaking...';
+  };
+  utt.onend=function(){
+    ttsSpeaking=false;
+    var pb=document.getElementById('tts-playbtn');if(pb){pb.textContent='▶';pb.classList.remove('speaking');}
+    var w=document.getElementById('tts-wave');if(w)w.classList.remove('active');
+    var st=document.getElementById('tts-status');
+    if(ttsIdx<ttsQ.length-1){ttsIdx++;setTimeout(function(){speakQueued(ttsIdx);},500);}
+    else if(st)st.textContent='⏹ Complete';
+  };
+  utt.onerror=function(e){
+    ttsSpeaking=false;
+    var pb=document.getElementById('tts-playbtn');if(pb){pb.textContent='▶';pb.classList.remove('speaking');}
+    var w=document.getElementById('tts-wave');if(w)w.classList.remove('active');
+    var st=document.getElementById('tts-status');if(st)st.textContent='⚠ '+e.error;
+  };
+  window.speechSynthesis.speak(utt);
+}
+
+function addToTTSQueue(item){ttsQ.push(item);renderTTSQueue();toast('Added to queue');}
+function speakQueued(idx){if(idx>=ttsQ.length)return;ttsIdx=idx;var item=ttsQ[idx];document.getElementById('tts-now').textContent=item.label;renderTTSQueue();speakText(item.text,item.lang);}
+
+function renderTTSQueue(){
+  var q=document.getElementById('tts-queue');q.innerHTML='';
+  ttsQ.forEach(function(item,i){
+    var d=document.createElement('div');d.className='tts-qitem'+(i===ttsIdx?' on':'');
+    d.innerHTML='<div class="tts-qdot"></div><span class="tts-qlabel">'+item.label+'</span><button class="tts-qrm">✕</button>';
+    (function(idx){
+      d.querySelector('.tts-qlabel').addEventListener('click',function(){speakQueued(idx);});
+      d.querySelector('.tts-qrm').addEventListener('click',function(){ttsQ.splice(idx,1);if(ttsIdx>=ttsQ.length)ttsIdx=Math.max(0,ttsQ.length-1);renderTTSQueue();});
+    })(i);
+    q.appendChild(d);
+  });
+}
+
+function ttsTogPlay(){
+  if(!ttsQ.length){toast('Click 🔊 on any verse to add it first.');return;}
+  var pb=document.getElementById('tts-playbtn'),st=document.getElementById('tts-status'),wave=document.getElementById('tts-wave');
+  if(ttsSpeaking){
+    window.speechSynthesis.cancel();ttsSpeaking=false;
+    if(pb){pb.textContent='▶';pb.classList.remove('speaking');}
+    if(wave)wave.classList.remove('active');
+    if(st)st.textContent='⏸ Press ▶ to restart';
+  }else{speakQueued(ttsIdx);}
+}
+function ttsNext(){if(ttsIdx<ttsQ.length-1){ttsIdx++;speakQueued(ttsIdx);}}
+function ttsPrev(){if(ttsIdx>0){ttsIdx--;speakQueued(ttsIdx);}}
+function ttsStop(){window.speechSynthesis.cancel();ttsSpeaking=false;ttsIdx=0;var pb=document.getElementById('tts-playbtn');if(pb){pb.textContent='▶';pb.classList.remove('speaking');}var w=document.getElementById('tts-wave');if(w)w.classList.remove('active');var st=document.getElementById('tts-status');if(st)st.textContent='⏹ Stopped';renderTTSQueue();}
+function updateTTSRate(v){ttsRate=parseFloat(v);document.getElementById('tts-rate-v').textContent=parseFloat(v).toFixed(1)+'x';}
+function updateTTSPitch(v){ttsPitch=parseFloat(v);document.getElementById('tts-pitch-v').textContent=parseFloat(v).toFixed(1);}
+function setTTSLang(lang,btn){ttsLang=lang;document.querySelectorAll('.tts-lang').forEach(function(b){b.classList.remove('on');});btn.classList.add('on');}
+
+function readFeedCard(s){
+  var text='',lang='en';
+  if((ttsLang==='auto'||ttsLang==='ur')&&s.u&&s.u.trim()){text=s.u;lang='ur';}
+  if(!text&&(ttsLang==='auto'||ttsLang==='hi')&&s.h&&s.h.trim()){text=s.h;lang='hi';}
+  if(!text&&s.e&&s.e.trim()){text=s.e;lang='en';}
+  if(!text){toast('No text in selected language.');return;}
+  if(s.trans)text+='. '+s.trans;
+  openTTSPanel();addToTTSQueue({label:'— '+(s.author||''),text:text,lang:lang});speakQueued(ttsQ.length-1);
+}
+
+function readPoetSher(idx){
+  var p=window._currentPoet;if(!p)return;var s=p.shers[idx];
+  var text='',lang='en';
+  if((ttsLang==='auto'||ttsLang==='ur')&&s.u&&s.u.trim()){text=s.u;lang='ur';}
+  if(!text&&(ttsLang==='auto'||ttsLang==='hi')&&s.h&&s.h.trim()){text=s.h;lang='hi';}
+  if(!text&&s.e&&s.e.trim()){text=s.e;lang='en';}
+  if(!text){toast('No text available.');return;}
+  if(s.m)text+='. '+s.m;
+  openTTSPanel();addToTTSQueue({label:p.name+' #'+(idx+1),text:text,lang:lang});speakQueued(ttsQ.length-1);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  EXPORT
+// ═══════════════════════════════════════════════════════════
+function openExport(obj){expSher=obj;expFmt='txt';document.querySelectorAll('.exp-fmt').forEach(function(b){b.classList.toggle('on',b.dataset.fmt==='txt');});updExpPv();document.getElementById('exp-overlay').classList.add('open');}
+function closeExp(){document.getElementById('exp-overlay').classList.remove('open');}
+function setExpFmt(fmt,btn){expFmt=fmt;document.querySelectorAll('.exp-fmt').forEach(function(b){b.classList.remove('on');});btn.classList.add('on');updExpPv();}
+
+function buildExpText(){
+  if(!expSher)return '';
+  var iU=document.getElementById('ei-urdu').checked,iH=document.getElementById('ei-hindi').checked;
+  var iE=document.getElementById('ei-eng').checked,iM=document.getElementById('ei-meaning').checked;
+  var iA=document.getElementById('ei-author').checked,iC=document.getElementById('ei-credit').checked;
+  var s=expSher;
+  if(expFmt==='json'){var o={};if(iA&&s.author)o.author=s.author;if(iU&&s.u)o.urdu=s.u;if(iH&&s.h)o.hindi=s.h;if(iE&&s.e)o.english=s.e;if(iM&&(s.m||s.trans))o.meaning=s.m||s.trans;if(iC)o.source='Shayari Duniya';return JSON.stringify(o,null,2);}
+  if(expFmt==='md'){var o='';if(iA&&s.author)o+='# '+s.author+'\n\n';if(iU&&s.u)o+='**اردو:**\n\n> '+s.u.split('\n').join('\n> ')+'\n\n';if(iH&&s.h)o+='**हिंदी:**\n\n> '+s.h.split('\n').join('\n> ')+'\n\n';if(iE&&s.e)o+='**English:**\n\n> *'+s.e+'*\n\n';if(iM&&(s.m||s.trans))o+='---\n*'+(s.m||s.trans)+'*\n\n';if(iC)o+='---\n*Source: Shayari Duniya*';return o.trim();}
+  var o='';var sep='─'.repeat(42)+'\n';if(iA&&s.author)o+='✦ '+s.author+'\n'+sep;if(iU&&s.u)o+=s.u+'\n\n';if(iH&&s.h)o+=s.h+'\n\n';if(iE&&s.e)o+='"'+s.e+'"\n\n';if(iM&&(s.m||s.trans))o+='― '+(s.m||s.trans)+'\n\n';if(iC)o+=sep+'Source: Shayari Duniya\n';return o.trim();
+}
+
+function updExpPv(){var t=buildExpText();document.getElementById('exp-preview').textContent=t||'(nothing selected)';}
+
+function doExport(action){
+  var text=buildExpText();if(!text){toast('Nothing selected.');return;}
+  var ext=expFmt==='json'?'json':expFmt==='md'?'md':'txt';
+  if(action==='download'){var blob=new Blob([text],{type:'text/plain;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='shayari-'+Date.now()+'.'+ext;a.click();URL.revokeObjectURL(a.href);toast('Downloaded!');closeExp();}
+  else if(action==='copy'){navigator.clipboard.writeText(text).then(function(){toast('Copied!');closeExp();}).catch(function(){toast('Copy failed');});}
+  else if(action==='whatsapp'){window.open('https://wa.me/?text='+encodeURIComponent(text.substring(0,1000)),'_blank');closeExp();}
+  else if(action==='email'){window.location.href='mailto:?subject='+encodeURIComponent('A verse from Shayari Duniya')+'&body='+encodeURIComponent(text);closeExp();}
+}
+
+function exportFeedCard(s){openExport({u:s.u,h:s.h,e:s.e,m:s.trans,author:s.author});}
+function exportPoetSher(idx){var p=window._currentPoet;if(!p)return;var s=p.shers[idx];openExport({u:s.u,h:s.h,e:s.e,m:s.m,author:p.name});}
+
+// ═══════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════
+function esc(str){
+  if(!str)return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function spawnPetals(){
+  var c=document.getElementById('petals');
+  for(var i=0;i<12;i++){
+    var p=document.createElement('div');p.className='petal';
+    var sz=(5+Math.random()*7)+'px';
+    p.style.cssText='left:'+Math.random()*100+'vw;width:'+sz+';height:'+sz+
+      ';animation-duration:'+(10+Math.random()*14)+'s;animation-delay:'+Math.random()*14+'s;'+
+      'background:'+(Math.random()>.5?'var(--rose)':'var(--gold)')+';opacity:'+(0.18+Math.random()*0.32);
+    c.appendChild(p);
+  }
+}
+
+function toast(msg){
+  var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove('show');},2800);
+}
+</script>
+</body>
+</html>
